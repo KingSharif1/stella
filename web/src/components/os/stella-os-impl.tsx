@@ -753,6 +753,7 @@ rvApps(o, ds, on, here) {
         return { label: 'Pi voice brain', val, tc: 'tog', showTog: 'display:none', showVal: 'display:inline-flex', pick: () => {
           const a2 = this.aiSt; if (!a2) return this.say('Pi not reachable');
           this.say(a2.engine === 'claude' ? 'Using Claude (' + a2.used_today + '/' + a2.cap + ' today)' : 'Offline: ' + (a2.reason || 'unknown') + (a2.last_err ? ' — ' + a2.last_err : '')); } }; })(),
+      { label: 'What she says', val: 'Edit', tc: 'tog', showTog: 'display:none', showVal: 'display:inline-flex', pick: () => this.props.onLines ? this.props.onLines() : null },
       { label: 'Self-check', val: this.scTxt || 'Run', tc: 'tog', showTog: 'display:none', showVal: 'display:inline-flex', pick: () => {
         this.scTxt = 'Checking…'; this.forceUpdate();
         this.api('/selfcheck', 'GET', undefined, 25000).then(x => {

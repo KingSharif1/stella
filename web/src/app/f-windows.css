@@ -157,3 +157,17 @@
 @media (prefers-reduced-motion: reduce) {
   .fc-orb::before, .fc-orb::after, .fc-core i, .fw-panel { animation: none !important; }
 }
+
+/* What she says (FLines) */
+.fl { display: flex; flex-direction: column; gap: 10px; width: 100%; padding-bottom: 76px; }
+.fl-note { min-height: 18px; font: 600 12px ui-monospace, monospace; color: var(--acc); text-align: center; }
+.fl-note[data-bad="1"] { color: var(--bad); }
+.fl-hint { color: var(--mute); font-size: 14px; text-align: center; }
+.fl-card { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--soft); display: flex; flex-direction: column; gap: 6px; }
+.fl-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13.5px; }
+.fl-btns { display: flex; gap: 6px; }
+.fl-btns button { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--ink); display: grid; place-items: center; cursor: pointer; }
+.fl-ta { width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--ink); padding: 8px 10px; font: 15px/1.45 inherit; font-family: inherit; }
+.fl-s { color: var(--mute); font-size: 12px; }
+.fl-save { position: sticky; bottom: 8px; align-self: stretch; height: 46px; border-radius: 12px; border: 0; background: var(--acc); color: #fff; font: 700 15px inherit; font-family: inherit; cursor: pointer; }
+.fl-save:disabled { opacity: .6; }
