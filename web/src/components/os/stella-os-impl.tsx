@@ -166,6 +166,14 @@ syncLive() {
       });
     });
   }
+  if (now - (this.camT || 0) > 10000) {
+    this.camT = now;
+    this.api('/camera/status', 'GET').then(d => {
+      this.camSt = d && !d.__err ? d : null;
+      // first time a working camera shows up, switch the Camera window to it (user can still pick LiDAR)
+      if (this.camSt && this.camSt.ok && !this.camAuto) { this.camAuto = true; this.setState({ camSrc: 'cam', camBad: 0 }); }
+    });
+  }
   if (now - (this.aiT || 0) > 10000) {
     this.aiT = now;
     this.api('/ai/status', 'GET').then(d => { this.aiSt = d && !d.__err ? d : null; });
@@ -490,7 +498,11 @@ parts() {
   return [
     { id: 'pi', n: 'Raspberry Pi 4', st: on ? 'ok' : 'off', src: 'api', head: on ? 'Online · the brain' : 'Not reachable', m: [['OS', 'Ubuntu 24.04'], ['ROS 2', 'Jazzy'], ['CPU temp', on ? '52 °C' : '—'], ['Throttled', on ? '0x0 (power OK)' : '—'], ['API', on ? 'WS /live · 0.5 s' : 'down']] },
     { id: 'lidar', n: 'RPLIDAR C1', st: on ? 'warn' : 'off', src: 'lidar', head: on ? 'Scanning · not mounted yet' : 'Offline', m: [['Rate', on ? '10 Hz' : '—'], ['Points', on ? '360 / scan' : '—'], ['Range', '12 m'], ['Adapter', 'Red CP2102 · 460800'], ['Mount', 'Pending']] },
-    { id: 'camera', n: 'Pi Camera', st: 'off', src: 'camera', head: 'Not detected', m: [['Sensor', 'imx219'], ['Error', 'Frontend timed out'], ['Likely', 'Ribbon / connector'], ['Fallback', 'LiDAR view']] },
+    (() => {
+      const c = this.camSt;
+      if (on && c && c.ok) return { id: 'camera', n: 'Pi Camera', st: 'ok', src: 'camera', head: c.streaming ? 'Live · ' + (c.fps || 0) + ' fps' : 'Detected · ready', m: [['Program', c.tool || '—'], ['Size', c.size || '—'], ['Stream', '/camera/stream'], ['Runs', 'only while you watch']] };
+      return { id: 'camera', n: 'Pi Camera', st: 'off', src: 'camera', head: on && c ? 'Not working' : 'Not detected', m: [['Program', (c && c.tool) || '—'], ['Problem', (c && c.error) || (on ? 'No camera answered' : 'Pi offline')], ['Check', 'Ribbon + camera_check.sh'], ['Fallback', 'LiDAR view']] };
+    })(),
     { id: 'base', n: 'Roomba 694 base', st: this.st === 'fault' ? 'off' : on ? 'ok' : 'off', src: 'driver', head: on ? 'Full mode · 115200 baud' : 'No answer', m: [['Mode', chg ? 'Passive (charging)' : on ? 'Full' : '—'], ['Cliff stops', on ? 'OFF in Full mode' : '—'], ['Bumper L / R', on ? '0 / 0' : '—'], ['Link', '/dev/stella-roomba']] },
     { id: 'battery', n: 'Battery', st: !on ? 'off' : bat < 20 && !chg ? 'warn' : 'ok', src: 'battery', head: on ? bat + '% · ' + (chg ? 'charging' : 'discharging') : 'No reading', m: [['Voltage', on ? (14.2 + this.bat * 0.0124).toFixed(2) + ' V' : '—'], ['Current', on ? (chg ? '+1.18 A' : mv ? '−0.84 A' : '−0.31 A') : '—'], ['Pack', 'Li-ion 14.4 V']] },
     { id: 'vacuum', n: 'Vacuum', st: on ? 'ok' : 'off', src: 'driver', head: s.tools.v ? 'Running · ' + s.suction : 'Off', m: [['Suction', SUC[s.suction] + ' kPa'], ['Mode', s.suction], ['Motor', s.tools.v ? 'on' : 'off']] },
@@ -641,7 +653,7 @@ rvApps(o, ds, on, here) {
   const cs = s.camSrc || 'lidar';
   const r = {
     apps: [
-      ['camera', 'Camera', s.camOn ? 'LiDAR · live' : 'Off', 'M4 8h3l2-3h6l2 3h3v11H4zM12 17a3.5 3.5 0 100-7 3.5 3.5 0 000 7', on && s.camOn ? 'var(--ok)' : 'var(--mute)'],
+      ['camera', 'Camera', s.camOn ? (cs === 'cam' && this.camSt && this.camSt.ok ? 'Live video' : 'LiDAR · live') : 'Off', 'M4 8h3l2-3h6l2 3h3v11H4zM12 17a3.5 3.5 0 100-7 3.5 3.5 0 000 7', on && s.camOn ? 'var(--ok)' : 'var(--mute)'],
       ['map', 'Map', expPct + '% mapped', 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14', 'var(--ok)'],
       ['parts', 'Parts', okN + ' of ' + P.length + ' ok', 'M9 3h6v4H9zM4 9h16v6H4zM9 17h6v4H9z', okN === P.length ? 'var(--ok)' : 'var(--warn)'],
       ['logs', 'Logs', warnN ? warnN + ' warning' + (warnN === 1 ? '' : 's') : 'All clear', 'M5 6h14M5 12h14M5 18h9', warnN ? 'var(--warn)' : 'var(--ok)'],
@@ -653,6 +665,9 @@ rvApps(o, ds, on, here) {
     isCam: s.app === 'camera', isMap: s.app === 'map', isParts: s.app === 'parts', isLogs: s.app === 'logs', isTv: s.app === 'tv', isClimate: s.app === 'climate', isSettings: s.app === 'settings',
     camTabs: [['cam', 'Camera'], ['lidar', 'LiDAR']].map(c => ({ label: c[1], cls: cs === c[0] ? 'on' : '', pick: () => this.setState({ camSrc: c[0] }) })),
     camIsCam: cs === 'cam', camIsLidar: cs !== 'cam', useLidar: () => this.setState({ camSrc: 'lidar' }),
+    camLive: !!(this.isLive() && this.camSt && this.camSt.ok && !s.camBad), camUrl: (this.live().robotUrl || '') + '/camera/stream?n=' + (s.camKey || 0),
+    camErr: () => this.setState({ camBad: Date.now() }), camRetry: () => { this.camT = 0; this.setState({ camBad: 0, camKey: Date.now() }); },
+    camMsg: !this.isLive() ? 'Camera works when you’re on your home network (Tailscale).' : !this.camSt ? 'Asking the Pi…' : (this.camSt.error || (s.camBad ? 'The video stopped.' : 'No camera detected on the Pi.')),
     camOn: s.camOn, camOff: !s.camOn, camTog: () => this.setState({ camOn: !s.camOn }), camTogCls: s.camOn ? 'tog on' : 'tog',
     nearLabel: this.near < 400 ? (this.near / 80).toFixed(1) + ' m' : '—', closeFpv: () => this.setState({ fpv: false })
   };

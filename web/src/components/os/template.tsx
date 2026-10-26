@@ -109,8 +109,11 @@ export function renderTemplate(v: any) {
 {v.camOn && (<><div className="aur a1" style={S("left:-40px;top:-40px;width:260px;height:260px;background:var(--st);opacity:.42")}></div>
 <div className="aur a2" style={S("right:-40px;bottom:-40px;width:300px;height:300px;background:#6a5cff;opacity:.38")}></div>
 <div className="aur a3" style={S("left:40%;top:30%;width:200px;height:200px;background:#00d4ff;opacity:.25")}></div>
-{v.camIsCam && (<><div style={S("position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#c9c9cf")}><b style={S("font-size:18px")}>{"No camera connected"}</b>
-<button type="button" className="btn" onClick={v.useLidar} style={S("background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.25)")}>{"Use LiDAR"}</button></div></>)}
+{v.camIsCam && v.camLive && (<><img key={v.camUrl} src={v.camUrl} alt="Stella camera, live" onError={v.camErr} style={S("position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;pointer-events:none")} /></>)}
+{v.camIsCam && !v.camLive && (<><div style={S("position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#c9c9cf;padding:0 24px;text-align:center")}><b style={S("font-size:18px")}>{"No camera picture"}</b>
+<span style={S("font-size:13px;opacity:.8;max-width:320px")}>{v.camMsg}</span>
+<div style={S("display:flex;gap:8px")}><button type="button" className="btn" onClick={v.camRetry} style={S("background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.25)")}>{"Try again"}</button>
+<button type="button" className="btn" onClick={v.useLidar} style={S("background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.25)")}>{"Use LiDAR"}</button></div></div></>)}
 {v.camIsLidar && (<><svg viewBox="0 0 640 360" preserveAspectRatio="none" width="100%" height="100%" style={S("position:absolute;inset:0;pointer-events:none")} aria-hidden="true">{v.fp.map((c: any, __i: number) => (<Fragment key={__i}><rect x={c.x} y={c.y} width={c.w} height={c.h} fill={c.f} opacity={c.o} /></Fragment>))}</svg>
 <svg viewBox="0 0 100 100" width="44" height="44" style={S("position:absolute;left:50%;top:50%;margin:-22px 0 0 -22px;opacity:.7;pointer-events:none")} aria-hidden="true"><path d="M50 20v20M50 60v20M20 50h20M60 50h20" stroke="#fff" strokeWidth="3" strokeLinecap="round" /></svg>
 <div className="mono" style={S("position:absolute;left:50%;top:12px;transform:translateX(-50%);font-size:13px;color:#fff;background:rgba(0,0,0,.45);padding:4px 12px;border-radius:999px;pointer-events:none")}>{v.viewDeg}{"° "}{v.headDir}</div>

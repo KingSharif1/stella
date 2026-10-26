@@ -94,3 +94,6 @@ converter lived outside the repo; edit `template.tsx` directly from now on.
 
 ## What she says (Settings → Voice → "What she says")
 Shows every fixed spoken reply (wake "Yesss?", Kalani bear, stop, dock, battery, TV, offline…), one line per reply, she picks one at random. Edit, tap 🔊 to hear one, ↺ to reset to default, Save. Also an optional style note for the Claude brain (style only). Pi: `GET/POST /replies`; edits saved in `~/.config/stella/replies.json` (`stella_replies.py`), applied on her next reply with no restart (restart the voice service once after updating the code).
+
+## Live camera (2026-10-25)
+Camera window shows the Pi's live picture when you're on the tailnet: the dashboard polls `GET /camera/status` and, when `ok`, renders `<img src="{robotUrl}/camera/stream">` (MJPEG). Tabs: Camera / LiDAR; first working camera switches the window to Camera once. If it fails the window says why with "Try again" and "Use LiDAR". Parts → Pi Camera shows live fps. Pi side + install steps: ARK `projects/stella/docs/camera-and-wake-2026-10-25.md`. Dashboard "Wake" now also pulses the Roomba's BRC wire when wired.
