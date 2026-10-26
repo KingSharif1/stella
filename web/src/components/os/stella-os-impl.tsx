@@ -38,7 +38,7 @@ constructor(p) {
   this.x = this.START[0]; this.y = this.START[1]; this.h = 90; this.sw = 0; this.bat = 74; this.st = 'idle';
   this.route = []; this.goal = ''; this.queue = []; this.holdDir = ''; this.stk = [0, 0];
   this.rot = 35; this.dragging = false; this.lastMove = 0; this.n = 0; this.exp = new Uint8Array(28 * 18); this.expPath = ''; this.expDirty = true;
-  this.logs = []; this.tl = 0; this.scanCache = null; this.look = 0; this.skip = {}; this.done = {}; this.lk = null; this.zd = null; this.vm = 'idle';
+  this.logs = []; this.act = {}; this.tl = 0; this.scanCache = null; this.look = 0; this.skip = {}; this.done = {}; this.lk = null; this.zd = null; this.vm = 'idle';
   this.PH = ['Stella, where are you?', 'Go to the kitchen', 'Set the temperature to 70', 'Volume up', 'Play Stranger Things', 'Dock'];
   this.state = {
     app: 'home', theme: 'dark', ctrl: 'console', pad: 'stick', speed: 50, tools: { v: false, m: false, s: false },
@@ -49,17 +49,20 @@ constructor(p) {
     cur: 71.8, set: 72, cmode: 'auto', camOn: true, bump: 0, eco: true,
     zones: [Object.assign({ n: 'Chimney' }, this.NOGO)], selRoom: 'living', draw: false, camSrc: 'lidar', traceOpen: false,
     camZoom: 1, camPx: 0, camPy: 0, camFlip: false,
+    lay: { order: ['map', 'control', 'shortcuts', 'flowmini', 'apps'], size: { map: 'L', control: 'M', shortcuts: 'M', flowmini: 'M', apps: 'F' }, hidden: {}, edit: false }, shortcuts: [{ id: 'sc1', n: 'Netflix', k: 'roku', a: 'netflix' }, { id: 'sc2', n: 'Charge', k: 'dock' }], flowSel: 'pi', scNew: false, scName: '', scKind: 'roku', scA: '', scB: '',
     cfg: { wake: true, spoken: true, vstyle: 'Warm', confirm: false, autoDock: 15, idleDock: 0, voiceOut: 'Device', resume: 90, edge: true, maxSpd: 100, lostStop: true, cliff: true, aBat: true, aStuck: true, aDone: true, quiet: 'Off', units: 'F', t24: false }
   };
   [['system', 'info', 'Stella API started · demo robot'], ['api', 'info', 'WS /live connected · 0.5 s frames'], ['driver', 'warn', 'Unknown mode detected (known noisy 600-series packet)'], ['lidar', 'info', 'RPLIDAR C1 · scan 10 Hz · 360 pts'], ['battery', 'info', 'Pack 15.28 V · 74%'], ['voice', 'info', 'Brain ready: Claude (cloud) + on-device fallback']].forEach(a => this.log(a[0], a[1], a[2]));
 }
 componentDidMount() {
   this.iv = setInterval(() => this.tick(), 120);
+  this.fv = setInterval(() => { if (this.state.app === 'flow' || this.state.app === 'home') this.forceUpdate(); }, 1000);
+  this.loadLayout();
   this.loadSaved();
   this.onNet = () => this.setState({ internet: typeof navigator === 'undefined' ? true : navigator.onLine });
   window.addEventListener('online', this.onNet); window.addEventListener('offline', this.onNet); this.onNet();
 }
-componentWillUnmount() { clearInterval(this.iv); clearTimeout(this.tt); clearTimeout(this.pushT); if (this.onNet) { window.removeEventListener('online', this.onNet); window.removeEventListener('offline', this.onNet); } try { this.rec && this.rec.abort(); } catch (x) {} this.driveZero(); }
+componentWillUnmount() { clearInterval(this.iv); clearInterval(this.fv); clearTimeout(this.tt); clearTimeout(this.pushT); if (this.onNet) { window.removeEventListener('online', this.onNet); window.removeEventListener('offline', this.onNet); } try { this.rec && this.rec.abort(); } catch (x) {} this.driveZero(); }
 componentDidUpdate(_p, ps) {
   const s = this.state;
   if (ps.theme !== s.theme && this.props.onTheme) this.props.onTheme(s.theme);
@@ -74,8 +77,10 @@ openTalk() { if (this.props.onTalk) this.props.onTalk(); else this.setState({ vo
 /* ───────── live bridge: everything below talks to the real robot when connected ───────── */
 live() { return (this.props && this.props.live) || {}; }
 isLive() { const l = this.live(); return l.connection === 'live' && !!l.robotUrl; }
+touch(src) { const a = this.act[src] || (this.act[src] = []); a.push(Date.now()); if (a.length > 200) a.shift(); }
 async api(path, method, body, ms) {
   const l = this.live(); if (!l.robotUrl) return null;
+  this.touch('api'); { const k = ({ pose: 'lidar', drive: 'driver', camera: 'camera', roku: 'tv', tv: 'tv', climate: 'climate' })[String(path).split('/')[1]]; if (k) this.touch(k); }
   const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), ms || 4000);
   try {
     const r = await fetch(l.robotUrl + path, { method: method || 'GET', headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal: ctl.signal });
@@ -195,7 +200,7 @@ syncLive() {
 log(src, lv, m) {
   const d = new Date();
   const t = [d.getHours(), d.getMinutes(), d.getSeconds()].map(v => ('0' + v).slice(-2)).join(':');
-  this.logs.unshift({ t, src, lv, m });
+  this.logs.unshift({ t, src, lv, m, ts: Date.now() }); this.touch(src);
   if (this.logs.length > 160) this.logs.pop();
 }
 say(m) { clearTimeout(this.tt); this.setState({ toast: m }); this.tt = setTimeout(() => this.setState({ toast: '' }), 2400); }
@@ -326,6 +331,65 @@ mark() {
   }
   if (ch) { let p = ''; for (let i = 0; i < 504; i++) if (this.exp[i]) p += 'M' + (20 + (i % 28) * 20) + ' ' + (20 + Math.floor(i / 28) * 20) + 'h20v20h-20z'; this.expPath = p; }
 }
+loadLayout() {
+  try {
+    const raw = localStorage.getItem('stella-os-layout'); if (!raw) return;
+    const d = JSON.parse(raw), p = {};
+    if (d.lay && Array.isArray(d.lay.order)) { const all = ['map', 'control', 'shortcuts', 'flowmini', 'apps']; const ord = d.lay.order.filter(i => all.includes(i)); all.forEach(i => { if (!ord.includes(i)) ord.push(i); }); p.lay = { order: ord, size: Object.assign({}, this.state.lay.size, d.lay.size || {}), hidden: d.lay.hidden || {}, edit: false }; }
+    if (Array.isArray(d.shortcuts)) p.shortcuts = d.shortcuts;
+    if (Object.keys(p).length) this.setState(p);
+  } catch (x) {}
+}
+saveLayout(lay, shortcuts) { try { localStorage.setItem('stella-os-layout', JSON.stringify({ lay: Object.assign({}, lay, { edit: false }), shortcuts })); } catch (x) {} }
+setLay(fn) { const lay = fn(this.state.lay); this.setState({ lay }); this.saveLayout(lay, this.state.shortcuts); }
+runShortcut(sc) {
+  const l = this.live();
+  if (sc.k === 'dock') { this.say('Sending Stella to the dock'); return this.dockNow ? this.dockNow() : this.api('/control/dock', 'POST'); }
+  if (sc.k === 'clean') { this.say('Starting a clean'); return this.api('/control/start', 'POST'); }
+  if (sc.k === 'say') { this.say(sc.a || ''); if (l.speak) l.speak(sc.a || ''); return; }
+  const cmd = sc.k === 'roku' ? { action: 'roku', app: sc.a } : sc.k === 'tv_play' ? { action: 'tv_play', app: sc.b || 'netflix', query: sc.a } : sc.k === 'tv_key' ? { action: 'tv_key', key: sc.a || 'Power' } : null;
+  if (!cmd) return;
+  this.log('voice', 'info', 'Shortcut “' + sc.n + '” → ' + cmd.action);
+  this.say(sc.n); if (l.runCommand) l.runCommand(cmd);
+}
+flowVm(P, on, b) {
+  const s = this.state, now = Date.now(), part = id => P.find(p => p.id === id) || { st: 'off', head: '—', m: [] };
+  const rate = k => { const a = this.act[k] || []; while (a.length && now - a[0] > 60000) a.shift(); return a.length; };
+  const recent = k => { const a = this.act[k] || []; return a.length && now - a[a.length - 1] < 6000; };
+  const live = this.isLive(), net = s.internet;
+  const tvOn = s.tvs.some(x => x.on);
+  const N = {
+    you: { n: 'Your phone', x: 90, y: 50, st: 'ok', h: live ? 'Linked to Stella' : 'Demo mode', m: [['Where', 'This browser'], ['Link', live ? 'Live (Tailscale)' : 'Demo']] },
+    web: { n: 'Website', x: 250, y: 50, st: net ? 'ok' : 'off', h: net ? 'Vercel · online' : 'No internet', m: [['Role', 'Serves this page'], ['Host', 'Vercel · Next.js']] },
+    claude: { n: 'Claude AI', x: 410, y: 50, st: b.id === 'claude' ? 'ok' : 'off', h: b.long, m: [['Used for', 'Hard questions'], ['Brain mode', s.brain]] },
+    tvs: { n: 'Roku TVs', x: 590, y: 50, st: tvOn ? 'ok' : 'off', h: tvOn ? 'On · ' + (s.tvs.find(x => x.on) || {}).app : 'All off', m: s.tvs.map(x => [x.n, x.on ? x.app : 'off']) },
+    api: { n: 'Web server', x: 90, y: 190, st: part('pi').st, h: part('pi').head, m: part('pi').m },
+    router: { n: 'AI router', x: 250, y: 190, st: on ? (b.id === 'none' ? 'warn' : 'ok') : 'off', h: on ? b.short : 'Pi offline', m: [['Picks', 'One safe action'], ['Fallback', 'On-device'], ['Brain', b.long]] },
+    voice: { n: 'Voice', x: 410, y: 190, st: part('audio').st, h: part('audio').head, m: part('audio').m },
+    roku: { n: 'Roku control', x: 590, y: 190, st: on ? 'ok' : 'off', h: on ? 'Ready' : 'Pi offline', m: [['Talks to', 'TVs on :8060'], ['Needs', 'Same Wi-Fi']] },
+    camera: { n: 'Pi Camera', x: 90, y: 335, st: part('camera').st, h: part('camera').head, m: part('camera').m },
+    lidar: { n: 'RPLIDAR C1', x: 250, y: 335, st: part('lidar').st, h: part('lidar').head, m: part('lidar').m },
+    base: { n: 'Roomba 694', x: 410, y: 335, st: part('base').st, h: part('base').head, m: part('base').m },
+    audio: { n: 'Mic + speaker', x: 590, y: 335, st: part('audio').st, h: part('audio').head, m: part('audio').m },
+    battery: { n: 'Battery', x: 410, y: 430, st: part('battery').st, h: part('battery').head, m: part('battery').m }
+  };
+  const E = [['you', 'web', 'api', 'page'], ['web', 'claude', 'claude', 'chat'], ['you', 'api', 'api', 'live + commands'], ['claude', 'router', 'claude', 'asks Claude'], ['api', 'router', 'voice', 'text'], ['voice', 'router', 'voice', 'heard'], ['router', 'roku', 'tv', 'action'], ['roku', 'tvs', 'tv', 'ECP'], ['api', 'camera', 'camera', 'video'], ['lidar', 'api', 'lidar', 'scan'], ['router', 'base', 'driver', 'drive'], ['voice', 'audio', 'voice', 'sound'], ['battery', 'base', 'battery', 'power']];
+  const SC = { ok: 'var(--ok)', warn: 'var(--warn)', off: 'var(--bad)' };
+  const nodes = Object.keys(N).map(id => { const n = N[id]; return { id, n: n.n, x: n.x - 62, y: n.y - 26, cx: n.x, cy: n.y, col: SC[n.st], sub: String(n.h).slice(0, 20), sel: s.flowSel === id, pick: () => this.setState({ flowSel: id }) }; });
+  const edges = E.map((e, i) => {
+    const a = N[e[0]], c = N[e[1]], dx = c.x - a.x, dy = c.y - a.y, L = Math.hypot(dx, dy) || 1;
+    const ux = dx / L, uy = dy / L, ex = Math.abs(ux) > Math.abs(uy) ? 62 : 0, ey = Math.abs(ux) > Math.abs(uy) ? 0 : 26;
+    const x1 = a.x + Math.sign(dx) * (ex || 0) + (ex ? 0 : ux * 0), y1 = a.y + Math.sign(dy) * (ey || 0);
+    const x2 = c.x - Math.sign(dx) * (ex || 0), y2 = c.y - Math.sign(dy) * (ey || 0);
+    const bad = a.st === 'off' || c.st === 'off', act = !bad && recent(e[2]), cnt = rate(e[2]);
+    return { k: i, x1, y1, x2, y2, mx: (x1 + x2) / 2, my: (y1 + y2) / 2 - 4, col: bad ? 'var(--bad)' : act ? 'var(--acc)' : 'var(--mute)', w: act ? 2.6 : 1.4, dash: bad ? '2 5' : act ? '7 6' : '3 6', cls: act ? 'fl-go' : '', op: bad ? .7 : act ? 1 : .5, lab: act || cnt ? (cnt + '/min') : '', tip: e[3] };
+  });
+  const sel = N[s.flowSel] || N.api;
+  const feed = this.logs.slice(0, 8).map(l => ({ t: l.t, svc: l.src, m: l.m, col: l.lv === 'warn' ? 'var(--warn)' : l.lv === 'err' ? 'var(--bad)' : 'var(--fg)' }));
+  const okN = Object.keys(N).filter(k => N[k].st === 'ok').length;
+  return { nodes, edges, sel: { n: sel.n, h: sel.h, col: SC[sel.st], m: sel.m.map(r => ({ k: r[0], v: r[1] })) }, feed, summary: okN + ' of ' + Object.keys(N).length + ' parts healthy', live };
+}
+
 brain() {
   const s = this.state;
   if (s.brain === 'local') return { id: 'local', short: 'On-device', long: 'On-device · offline', dot: '#3ecf8e' };
@@ -509,7 +573,27 @@ renderVals() {
     tools: [['v', 'Vacuum'], ['m', 'Main brush'], ['s', 'Side brush']].map(t => ({ n: t[1], on: s.tools[t[0]], dot: s.tools[t[0]] ? 'var(--ok)' : 'var(--mute)', style: s.tools[t[0]] ? 'border-color:var(--ok)' : '', pick: () => this.setTool(t[0]) })),
     toast: s.toast
   };
-  const TIT = { camera: 'Camera', map: 'Map', parts: 'Parts', logs: 'Logs', tv: 'TV', climate: 'Climate', settings: 'Settings' };
+  const L = s.lay, SZ = { S: 'span 4', M: 'span 4', L: 'span 8', F: 'span 12' }, NAME = { map: 'Map', control: 'Controls', shortcuts: 'My shortcuts', flowmini: 'Live status', apps: 'Apps' };
+  const vis = L.order.filter(i => !L.hidden[i]);
+  o.hw = (L.edit ? L.order : vis).map((id, i, arr) => ({ id, name: NAME[id], hid: !!L.hidden[id], span: SZ[L.size[id] || 'M'], size: L.size[id] || 'M',
+    first: i === 0, last: i === arr.length - 1,
+    up: () => this.setLay(l => { const o = l.order.slice(), k = o.indexOf(id); if (k > 0) { o.splice(k, 1); o.splice(k - 1, 0, id); } return Object.assign({}, l, { order: o }); }),
+    down: () => this.setLay(l => { const o = l.order.slice(), k = o.indexOf(id); if (k < o.length - 1) { o.splice(k, 1); o.splice(k + 1, 0, id); } return Object.assign({}, l, { order: o }); }),
+    sizes: ['M', 'L', 'F'].map(z => ({ z, label: z === 'M' ? '1/3' : z === 'L' ? '2/3' : 'Full', on: (L.size[id] || 'M') === z, pick: () => this.setLay(l => Object.assign({}, l, { size: Object.assign({}, l.size, { [id]: z }) })) })),
+    toggleHide: () => this.setLay(l => Object.assign({}, l, { hidden: Object.assign({}, l.hidden, { [id]: !l.hidden[id] }) })) }));
+  o.lay = { edit: L.edit, toggle: () => this.setState({ lay: Object.assign({}, L, { edit: !L.edit }), scNew: false }), reset: () => { const lay = { order: ['map', 'control', 'shortcuts', 'flowmini', 'apps'], size: { map: 'L', control: 'M', shortcuts: 'M', flowmini: 'M', apps: 'F' }, hidden: {}, edit: true }; this.setState({ lay }); this.saveLayout(lay, s.shortcuts); this.say('Layout reset'); } };
+  o.greet = (() => { const h = new Date().getHours(); return (h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening') + ', King Sharif.'; })();
+  o.greetSub = on ? ('Stella is ' + (this.st === 'charging' ? 'docked and charging' : this.displayState() === 'moving' ? 'out cleaning' : 'idle') + ' · ' + Math.round(this.bat) + '%') : 'Stella is offline';
+  o.sc = { list: s.shortcuts.map(c => ({ n: c.n, sub: c.k === 'roku' ? 'Open ' + c.a : c.k === 'tv_play' ? 'Play ' + c.a + ' on ' + (c.b || 'netflix') : c.k === 'dock' ? 'Send to dock' : c.k === 'clean' ? 'Start cleaning' : c.k === 'say' ? 'Say it' : 'TV ' + (c.a || 'Power'), run: () => this.runShortcut(c), del: () => { const sh = s.shortcuts.filter(x => x.id !== c.id); this.setState({ shortcuts: sh }); this.saveLayout(L, sh); } })),
+    edit: L.edit, adding: s.scNew, openNew: () => this.setState({ scNew: true }), cancel: () => this.setState({ scNew: false }), name: s.scName, a: s.scA, b: s.scB, kind: s.scKind,
+    setName: e => this.setState({ scName: e.target.value }), setA: e => this.setState({ scA: e.target.value }), setB: e => this.setState({ scB: e.target.value }),
+    needA: ['roku', 'tv_play', 'say', 'tv_key'].includes(s.scKind), needB: s.scKind === 'tv_play',
+    aHint: s.scKind === 'roku' ? 'App, e.g. netflix' : s.scKind === 'tv_play' ? 'Title, e.g. The Sandman' : s.scKind === 'say' ? 'What Stella says' : 'Key, e.g. Power',
+    kinds: [['roku', 'Open app'], ['tv_play', 'Play title'], ['tv_key', 'TV key'], ['say', 'Say'], ['clean', 'Clean'], ['dock', 'Dock']].map(k => ({ label: k[1], cls: s.scKind === k[0] ? 'on' : '', pick: () => this.setState({ scKind: k[0] }) })),
+    save: () => { if (!s.scName.trim()) { this.say('Give it a name'); return; } const sh = s.shortcuts.concat([{ id: 'sc' + Date.now(), n: s.scName.trim(), k: s.scKind, a: s.scA.trim(), b: s.scB.trim() }]); this.setState({ shortcuts: sh, scNew: false, scName: '', scA: '', scB: '' }); this.saveLayout(L, sh); this.say('Shortcut added'); } };
+  o.mini = this.parts().map(p => ({ n: p.n, col: p.st === 'ok' ? 'var(--ok)' : p.st === 'warn' ? 'var(--warn)' : 'var(--bad)', head: p.head })).slice(0, 6);
+  o.openFlow = () => this.setState({ app: 'flow' });
+  const TIT = { flow: 'Live flow', camera: 'Camera', map: 'Map', parts: 'Parts', logs: 'Logs', tv: 'TV', climate: 'Climate', settings: 'Settings' };
   o.appTitle = TIT[s.app] || '';
   Object.assign(o, this.rvApps(o, ds, on, here));
   return o;
@@ -557,6 +641,7 @@ voiceRun(text) {
   if (b.id === 'claude') {
     const t0 = Date.now();
     const history = this.state.turns.slice(-4).flatMap(x => [{ role: 'user', text: x.heard }, { role: 'assistant', text: x.reply }]);
+    this.touch('claude'); this.touch('voice');
     fetch('/api/stella/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, history, mode: 'call' }) })
       .then(r => r.json()).then(d => {
         if (!d || !d.reply) throw new Error('empty');
@@ -681,9 +766,11 @@ rvApps(o, ds, on, here) {
       ['logs', 'Logs', warnN ? warnN + ' warning' + (warnN === 1 ? '' : 's') : 'All clear', 'M5 6h14M5 12h14M5 18h9', warnN ? 'var(--warn)' : 'var(--ok)'],
       ['tv', 'TV', tv.on ? tv.app : 'Off', 'M3 6h18v11H3zM8 21h8', tv.on ? 'var(--ok)' : 'var(--mute)'],
       ['climate', 'Climate', s.cur.toFixed(0) + '° → ' + s.set + '°', 'M10 4a2 2 0 014 0v9.5a4.5 4.5 0 11-4 0z', 'var(--ok)'],
+      ['flow', 'Live flow', on ? 'Data moving' : 'Offline', 'M5 6a2 2 0 100 4 2 2 0 000-4zM19 14a2 2 0 100 4 2 2 0 000-4zM7 8h4a4 4 0 014 4v2M15 16h-2', on ? 'var(--ok)' : 'var(--mute)'],
       ['voice', 'Voice', b.short, 'M9 3h6v10a3 3 0 01-6 0zM5 11a7 7 0 0014 0M12 18v3', b.dot],
       ['settings', 'Settings', 'Voice · alerts', 'M12 9a3 3 0 100 6 3 3 0 000-6M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2', 'var(--mute)']
     ].map(a => ({ title: a[1], sub: a[2], icon: a[3], dot: a[4], pick: () => a[0] === 'voice' ? this.openTalk() : a[0] === 'tv' && this.props.onRemote ? this.props.onRemote() : this.setState({ app: a[0] }) })),
+    isFlow: s.app === 'flow', flow: this.flowVm(P, on, b),
     isCam: s.app === 'camera', isMap: s.app === 'map', isParts: s.app === 'parts', isLogs: s.app === 'logs', isTv: s.app === 'tv', isClimate: s.app === 'climate', isSettings: s.app === 'settings',
     camTabs: [['cam', 'Camera'], ['lidar', 'LiDAR']].map(c => ({ label: c[1], cls: cs === c[0] ? 'on' : '', pick: () => this.setState({ camSrc: c[0] }) })),
     camIsCam: cs === 'cam', camIsLidar: cs !== 'cam', useLidar: () => this.setState({ camSrc: 'lidar' }),
