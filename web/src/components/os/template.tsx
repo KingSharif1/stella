@@ -15,6 +15,17 @@ export function S(s: string): CSSProperties {
   return o as CSSProperties;
 }
 
+const CHIP = "height:34px;min-width:44px;padding:0 10px;font-size:14px;font-weight:600;background:rgba(0,0,0,.55);color:#fff;border-color:rgba(255,255,255,.3)";
+function CamControls({ v, pos, row }: { v: any; pos: string; row?: boolean }) {
+  return (<div style={S(`position:absolute;${pos};display:flex;flex-direction:${row ? "row" : "column"};gap:6px;align-items:stretch`)}>
+    <button type="button" className="chip" aria-label="Zoom in" onClick={v.camZin} style={S(CHIP)}>{"+"}</button>
+    <button type="button" className="chip" aria-label="Zoom out" onClick={v.camZout} style={S(CHIP)}>{"−"}</button>
+    {v.camZoomed && (<button type="button" className="chip" aria-label="Reset zoom" onClick={v.camZreset} style={S(CHIP)}>{v.camZoomLbl}</button>)}
+    <button type="button" className="chip" aria-label="Flip upside down" aria-pressed={v.camFlip} onClick={v.camFlipTog} style={S(CHIP + (v.camFlip ? ";background:#fff;color:#111" : ""))}>{"Flip"}</button>
+    <button type="button" className="chip" aria-label="Open a photo" onClick={v.camPhoto} style={S(CHIP)}>{"Photo"}</button>
+  </div>);
+}
+
 export function renderTemplate(v: any) {
   return (
     <>
@@ -109,7 +120,9 @@ export function renderTemplate(v: any) {
 {v.camOn && (<><div className="aur a1" style={S("left:-40px;top:-40px;width:260px;height:260px;background:var(--st);opacity:.42")}></div>
 <div className="aur a2" style={S("right:-40px;bottom:-40px;width:300px;height:300px;background:#6a5cff;opacity:.38")}></div>
 <div className="aur a3" style={S("left:40%;top:30%;width:200px;height:200px;background:#00d4ff;opacity:.25")}></div>
-{v.camIsCam && v.camLive && (<><img key={v.camUrl} src={v.camUrl} alt="Stella camera, live" onError={v.camErr} style={S("position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;pointer-events:none")} /></>)}
+{v.camIsCam && v.camLive && !v.fpv && (<><img key={v.camUrl} src={v.camUrl} alt="Stella camera, live" onError={v.camErr} style={S(v.camImgStyle)} />
+<div aria-label="Pinch or double-tap to zoom, drag to move" onPointerDown={v.camDown} onPointerMove={v.camMove} onPointerUp={v.camUp} onPointerCancel={v.camUp} onDoubleClick={v.camDbl} style={S("position:absolute;inset:0;touch-action:none;cursor:zoom-in")}></div>
+<CamControls v={v} pos="right:12px;top:12px" /></>)}
 {v.camIsCam && !v.camLive && (<><div style={S("position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#c9c9cf;padding:0 24px;text-align:center")}><b style={S("font-size:18px")}>{"No camera picture"}</b>
 <span style={S("font-size:13px;opacity:.8;max-width:320px")}>{v.camMsg}</span>
 <div style={S("display:flex;gap:8px")}><button type="button" className="btn" onClick={v.camRetry} style={S("background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.25)")}>{"Try again"}</button>
@@ -292,11 +305,14 @@ export function renderTemplate(v: any) {
 {v.fpv && (<><div role="dialog" aria-label="First-person drive" style={S("position:fixed;inset:0;z-index:55;background:#05050a;color:#fff;overflow:hidden")}><div className="aur a1" style={S("left:-60px;top:-60px;width:340px;height:340px;background:var(--st);opacity:.4")}></div>
 <div className="aur a2" style={S("right:-60px;bottom:-60px;width:380px;height:380px;background:#6a5cff;opacity:.38")}></div>
 <div className="aur a3" style={S("left:40%;top:25%;width:260px;height:260px;background:#00d4ff;opacity:.22")}></div>
-<svg viewBox="0 0 640 360" preserveAspectRatio="none" width="100%" height="100%" style={S("position:absolute;inset:0;pointer-events:none")} aria-hidden="true">{v.fp.map((c: any, __i: number) => (<Fragment key={__i}><rect x={c.x} y={c.y} width={c.w} height={c.h} fill={c.f} opacity={c.o} /></Fragment>))}</svg>
-<div style={S("position:absolute;inset:0;touch-action:none;cursor:grab")} onPointerDown={v.lookDown} onPointerMove={v.lookMove} onPointerUp={v.lookUp} onPointerCancel={v.lookUp}></div>
-<svg viewBox="0 0 100 100" width="60" height="60" style={S("position:absolute;left:50%;top:50%;margin:-30px 0 0 -30px;opacity:.75;pointer-events:none")} aria-hidden="true"><path d="M50 18v22M50 60v22M18 50h22M60 50h22" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
+{v.camShow ? (<><img key={v.camUrl} src={v.camUrl} alt="Stella camera, live" onError={v.camErr} style={S(v.camImgStyle)} />
+<div aria-label="Pinch or double-tap to zoom, drag to move" onPointerDown={v.camDown} onPointerMove={v.camMove} onPointerUp={v.camUp} onPointerCancel={v.camUp} onDoubleClick={v.camDbl} style={S("position:absolute;inset:0;touch-action:none;cursor:zoom-in")}></div>
+<CamControls v={v} pos="left:50%;top:56px;transform:translateX(-50%)" row /></>) : (<><svg viewBox="0 0 640 360" preserveAspectRatio="none" width="100%" height="100%" style={S("position:absolute;inset:0;pointer-events:none")} aria-hidden="true">{v.fp.map((c: any, __i: number) => (<Fragment key={__i}><rect x={c.x} y={c.y} width={c.w} height={c.h} fill={c.f} opacity={c.o} /></Fragment>))}</svg>
+<div style={S("position:absolute;inset:0;touch-action:none;cursor:grab")} onPointerDown={v.lookDown} onPointerMove={v.lookMove} onPointerUp={v.lookUp} onPointerCancel={v.lookUp}></div></>)}
+{!v.camShow && (<><svg viewBox="0 0 100 100" width="60" height="60" style={S("position:absolute;left:50%;top:50%;margin:-30px 0 0 -30px;opacity:.75;pointer-events:none")} aria-hidden="true"><path d="M50 18v22M50 60v22M18 50h22M60 50h22" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
 <circle cx="50" cy="50" r="3" fill="#fff" /></svg>
-<div className="mono" style={S("position:absolute;left:50%;top:14px;transform:translateX(-50%);font-size:13px;background:rgba(0,0,0,.5);padding:5px 14px;border-radius:999px;pointer-events:none")}>{v.viewDeg}{"° "}{v.headDir}{" · "}{v.nearLabel}</div>
+<div className="mono" style={S("position:absolute;left:50%;top:58px;transform:translateX(-50%);font-size:13px;background:rgba(0,0,0,.5);padding:5px 14px;border-radius:999px;pointer-events:none")}>{v.viewDeg}{"° "}{v.headDir}{" · "}{v.nearLabel}</div></>)}
+<div role="group" aria-label="View" style={S("position:absolute;left:50%;top:10px;transform:translateX(-50%);display:flex;gap:4px;padding:3px;border-radius:999px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.3)")}>{v.camTabs.map((c: any, __i: number) => (<Fragment key={__i}><button type="button" onClick={c.pick} aria-pressed={c.cls === "on"} style={S(`height:34px;padding:0 14px;border-radius:999px;font-size:13px;font-weight:600;${c.cls === "on" ? "background:#fff;color:#111" : "background:transparent;color:#fff"}`)}>{c.label}</button></Fragment>))}</div>
 <button type="button" className="chip" onClick={v.closeFpv} style={S("position:absolute;right:14px;top:10px;height:40px;padding:0 16px;background:rgba(0,0,0,.55);color:#fff;border-color:rgba(255,255,255,.3)")}>{"Close"}</button>
 {v.lookOff && (<><button type="button" className="chip" onClick={v.lookCenter} style={S("position:absolute;left:14px;top:10px;height:40px;padding:0 16px;background:rgba(0,0,0,.55);color:#fff;border-color:rgba(255,255,255,.3)")}>{"Center"}</button></>)}
 <svg viewBox="0 0 150 150" width="132" height="132" style={S("position:absolute;left:14px;top:60px;pointer-events:none")} aria-hidden="true"><defs><clipPath id="mmclip"><circle cx="75" cy="75" r="72" /></clipPath></defs>

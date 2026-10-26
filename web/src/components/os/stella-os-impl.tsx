@@ -48,6 +48,7 @@ constructor(p) {
     tvSel: 0, tvs: [{ n: '75 Living', on: true, app: 'Netflix', vol: 18, playing: true, mute: false }, { n: 'ds twin', on: false, app: '—', vol: 12, playing: false, mute: false }, { n: 'sharif d ace', on: false, app: '—', vol: 10, playing: false, mute: false }],
     cur: 71.8, set: 72, cmode: 'auto', camOn: true, bump: 0, eco: true,
     zones: [Object.assign({ n: 'Chimney' }, this.NOGO)], selRoom: 'living', draw: false, camSrc: 'lidar', traceOpen: false,
+    camZoom: 1, camPx: 0, camPy: 0, camFlip: false,
     cfg: { wake: true, spoken: true, vstyle: 'Warm', confirm: false, autoDock: 15, idleDock: 0, voiceOut: 'Device', resume: 90, edge: true, maxSpd: 100, lostStop: true, cliff: true, aBat: true, aStuck: true, aDone: true, quiet: 'Off', units: 'F', t24: false }
   };
   [['system', 'info', 'Stella API started · demo robot'], ['api', 'info', 'WS /live connected · 0.5 s frames'], ['driver', 'warn', 'Unknown mode detected (known noisy 600-series packet)'], ['lidar', 'info', 'RPLIDAR C1 · scan 10 Hz · 360 pts'], ['battery', 'info', 'Pack 15.28 V · 74%'], ['voice', 'info', 'Brain ready: Claude (cloud) + on-device fallback']].forEach(a => this.log(a[0], a[1], a[2]));
@@ -386,6 +387,27 @@ liveLidarCols() {
   out.push({ x: 314, y: 174, w: 12, h: 12, f: '#ffffff', o: 1 });
   return out;
 }
+camSet(z, x, y) {
+  // zoom 1x-5x; pan is a percent of the frame and can't go past the picture edge
+  z = Math.min(5, Math.max(1, z)); const mx = (z - 1) / 2 * 100;
+  this.setState({ camZoom: z, camPx: z <= 1 ? 0 : Math.max(-mx, Math.min(mx, x)), camPy: z <= 1 ? 0 : Math.max(-mx, Math.min(mx, y)) });
+}
+camPtr(kind, e) {
+  // one finger/mouse drags the picture (when zoomed in), two fingers pinch to zoom
+  const P = this.cptr || (this.cptr = new Map()), st = this.state;
+  const base = () => { const f = P.values().next().value; this.cg = { z: st.camZoom || 1, px: st.camPx || 0, py: st.camPy || 0, x: f ? f.x : 0, y: f ? f.y : 0, d: this.camDist(P) }; };
+  if (kind === 'down') {
+    e.stopPropagation(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) {}
+    P.set(e.pointerId, { x: e.clientX, y: e.clientY }); base(); return;
+  }
+  if (!P.has(e.pointerId)) return;
+  if (kind === 'up') { P.delete(e.pointerId); if (P.size) base(); else this.cg = null; return; }
+  P.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const r = e.currentTarget.getBoundingClientRect(), g = this.cg; if (!g || !r.width) return;
+  if (P.size >= 2 && g.d > 0) this.camSet(g.z * this.camDist(P) / g.d, g.px, g.py);
+  else if (P.size === 1 && g.z > 1) this.camSet(g.z, g.px + (e.clientX - g.x) / r.width * 100, g.py + (e.clientY - g.y) / r.height * 100);
+}
+camDist(P) { const v = Array.from(P.values()); return v.length >= 2 ? Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y) : 0; }
 fpvCols() {
   const N = 80, FOV = 100, out = []; let near = 999;
   for (let i = 0; i < N; i++) {
@@ -666,6 +688,14 @@ rvApps(o, ds, on, here) {
     camTabs: [['cam', 'Camera'], ['lidar', 'LiDAR']].map(c => ({ label: c[1], cls: cs === c[0] ? 'on' : '', pick: () => this.setState({ camSrc: c[0] }) })),
     camIsCam: cs === 'cam', camIsLidar: cs !== 'cam', useLidar: () => this.setState({ camSrc: 'lidar' }),
     camLive: !!(this.isLive() && this.camSt && this.camSt.ok && !s.camBad), camUrl: (this.live().robotUrl || '') + '/camera/stream?n=' + (s.camKey || 0),
+    camShow: !!(cs === 'cam' && this.isLive() && this.camSt && this.camSt.ok && !s.camBad),
+    camZoomLbl: (s.camZoom || 1).toFixed((s.camZoom || 1) % 1 ? 1 : 0) + '×', camZoomed: (s.camZoom || 1) > 1.01, camFlip: !!s.camFlip,
+    camImgStyle: `position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;pointer-events:none;transform-origin:center;transform:translate(${(s.camPx || 0).toFixed(2)}%,${(s.camPy || 0).toFixed(2)}%) scale(${(s.camZoom || 1).toFixed(3)}) rotate(${s.camFlip ? 180 : 0}deg)`,
+    camDown: e => this.camPtr('down', e), camMove: e => this.camPtr('move', e), camUp: e => this.camPtr('up', e),
+    camDbl: () => this.camSet((s.camZoom || 1) > 1.01 ? 1 : 2.5, 0, 0),
+    camZin: () => this.camSet((s.camZoom || 1) * 1.5, s.camPx || 0, s.camPy || 0), camZout: () => this.camSet((s.camZoom || 1) / 1.5, s.camPx || 0, s.camPy || 0),
+    camZreset: () => this.camSet(1, 0, 0), camFlipTog: () => this.setState({ camFlip: !s.camFlip }),
+    camPhoto: () => { try { window.open((this.live().robotUrl || '') + '/camera/snapshot', '_blank', 'noopener'); } catch (x) {} },
     camErr: () => this.setState({ camBad: Date.now() }), camRetry: () => { this.camT = 0; this.setState({ camBad: 0, camKey: Date.now() }); },
     camMsg: !this.isLive() ? 'Camera works when you’re on your home network (Tailscale).' : !this.camSt ? 'Asking the Pi…' : (this.camSt.error || (s.camBad ? 'The video stopped.' : 'No camera detected on the Pi.')),
     camOn: s.camOn, camOff: !s.camOn, camTog: () => this.setState({ camOn: !s.camOn }), camTogCls: s.camOn ? 'tog on' : 'tog',
