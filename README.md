@@ -16,6 +16,20 @@ Raw sensor recordings and video stay out of git (`data/recordings/`, `data/video
 
 ---
 
+## How it all connects
+
+![How Stella connects](docs/img/stella-how-it-connects.svg)
+
+Read it top to bottom. You and the web are at the top, the Pi is the brain in the middle, the Roomba and its sensors are the body at the bottom. Your phone talks straight to the Pi through Tailscale, so the website is only the page you load.
+
+When you say "Stella, play The Sandman on Netflix": the mic hears you, the voice part catches the wake word, the AI router picks the TV action, Roku control plays it, and Stella speaks back.
+
+The detailed version, with the voice path, power chain and wake wire: [docs/img/stella-system-detailed.svg](docs/img/stella-system-detailed.svg).
+
+![Detailed system diagram](docs/img/stella-system-detailed.svg)
+
+---
+
 ## The build story
 
 I bought a secondhand Roomba 694 in August with one idea: turn a dumb vacuum into a robot that maps my place and cleans on its own, run from a dashboard I built myself. I named her Stella.
