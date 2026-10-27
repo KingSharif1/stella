@@ -129,6 +129,11 @@ syncLive() {
   if (l.robotOnline === false) { if (this.st !== 'fault') this.st = 'offline'; }
   else this.st = l.mode === 'docked' ? 'charging' : 'idle';
   if (l.mode === 'cleaning' || l.mode === 'returning') this.lastMove = now;
+  if (this.isLive() && now - (this.vpT || 0) > 2000) {
+    this.vpT = now;
+    this.api('/voice/state', 'GET', undefined, 2500).then(d => { if (d && !d.__err) this.vst = d; else if (d === null) this.vst = null; });
+    this.api('/voice/log?limit=12', 'GET', undefined, 2500).then(d => { if (d && Array.isArray(d.log)) { if (d.log.length && (!this.vlog || !this.vlog.length || this.vlog[0].t !== d.log[0].t)) this.touch('voice'); this.vlog = d.log; } });
+  }
   if (now - (this.pollT || 0) > 700) {
     this.pollT = now;
     this.api('/pose', 'GET').then(p => {
@@ -377,7 +382,7 @@ flowVm(P, on, b) {
     tvs: { n: 'Roku TVs', x: 590, y: 50, st: tvOn ? 'ok' : 'off', h: tvOn ? 'On · ' + (s.tvs.find(x => x.on) || {}).app : 'All off', m: s.tvs.map(x => [x.n, x.on ? x.app : 'off']) },
     api: { n: 'Web server', x: 90, y: 190, st: part('pi').st, h: part('pi').head, m: part('pi').m },
     router: { n: 'AI router', x: 250, y: 190, st: on ? (b.id === 'none' ? 'warn' : 'ok') : 'off', h: on ? b.short : 'Pi offline', m: [['Picks', 'One safe action'], ['Fallback', 'On-device'], ['Brain', b.long]] },
-    voice: { n: 'Voice', x: 410, y: 190, st: part('audio').st, h: part('audio').head, m: part('audio').m },
+    voice: { n: 'Voice', x: 410, y: 190, st: this.vst ? (this.vst.alive ? 'ok' : 'warn') : part('audio').st, h: this.vst ? (this.vst.alive ? 'Mic ' + this.vst.state : 'Voice service not running') : part('audio').head, m: this.vst ? [['State', this.vst.state], ['Last heard', this.vst.heard || '—'], ['Wake words', 'Stella · Kalani bear']] : part('audio').m },
     roku: { n: 'Roku control', x: 590, y: 190, st: on ? 'ok' : 'off', h: on ? 'Ready' : 'Pi offline', m: [['Talks to', 'TVs on :8060'], ['Needs', 'Same Wi-Fi']] },
     camera: { n: 'Pi Camera', x: 90, y: 335, st: part('camera').st, h: part('camera').head, m: part('camera').m },
     lidar: { n: 'RPLIDAR C1', x: 250, y: 335, st: part('lidar').st, h: part('lidar').head, m: part('lidar').m },
@@ -612,6 +617,14 @@ renderVals() {
       del: () => { const layouts = cur.filter(l => l.id !== s.layActive); if (!layouts.length) return; const tg = layouts[0]; this.setState({ layouts, layActive: tg.id, lay: Object.assign({}, tg.lay, { edit: true }) }); this.saveLayout(tg.lay, s.shortcuts, { layouts, active: tg.id }); this.say('Layout deleted'); },
       accents: [['Orange', ''], ['Mint', '#3ecf8e'], ['Blue', '#6aa2ff'], ['Violet', '#a78bfa'], ['Pink', '#ff6fae']].map(a => ({ name: a[0], c: a[1] || '#ff5a1f', on: s.accent === a[1], pick: () => { this.setState({ accent: a[1] }); keep({ accent: a[1] }); } })) };
     o.accentStyle = s.accent ? ';--acc:' + s.accent : ''; }
+
+  { const VS = this.vst, LG = (this.vlog || []), live = this.isLive();
+    const LBL = { listening: 'Listening', heard: 'Heard you', thinking: 'Thinking', speaking: 'Speaking', off: 'Voice is off' };
+    const COL = { listening: 'var(--ok)', heard: 'var(--acc)', thinking: '#a78bfa', speaking: 'var(--acc)', off: 'var(--bad)' };
+    const st = VS ? (VS.alive ? VS.state : 'off') : '';
+    o.voiceLog = { live, has: !!VS, state: LBL[st] || '—', col: COL[st] || 'var(--mute)', heard: VS ? VS.heard : '', empty: live && LG.length === 0,
+      note: live ? 'Newest first. Heard is what the mic caught. Brain shows who decided: Claude or the Pi on its own.' : 'Connect to Stella to see what she heard.',
+      rows: LG.slice(0, 10).map(r => ({ t: String(r.t || '').slice(11, 19), heard: r.heard || '—', intent: r.intent || '—', brain: r.brain === 'claude' ? 'Claude' : 'On-device', ok: r.ok !== false, res: r.message || r.say || '', col: r.ok === false ? 'var(--bad)' : 'var(--fg)' })) }; }
   o.openFlow = () => this.setState({ app: 'flow' });
   const TIT = { flow: 'Live flow', camera: 'Camera', map: 'Map', parts: 'Parts', logs: 'Logs', tv: 'TV', climate: 'Climate', settings: 'Settings' };
   o.appTitle = TIT[s.app] || '';
