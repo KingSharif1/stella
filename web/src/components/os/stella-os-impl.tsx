@@ -49,9 +49,10 @@ constructor(p) {
     cur: 71.8, set: 72, cmode: 'auto', camOn: true, bump: 0, eco: true,
     zones: [Object.assign({ n: 'Chimney' }, this.NOGO)], selRoom: 'living', draw: false, camSrc: 'lidar', traceOpen: false,
     camZoom: 1, camPx: 0, camPy: 0, camFlip: false,
-    lay: { order: ['map', 'control', 'shortcuts', 'flowmini', 'apps'], size: { map: 'L', control: 'M', shortcuts: 'M', flowmini: 'M', apps: 'F' }, hidden: {}, edit: false }, shortcuts: [{ id: 'sc1', n: 'Netflix', k: 'roku', a: 'netflix' }, { id: 'sc2', n: 'Charge', k: 'dock' }], flowSel: 'pi', scNew: false, scName: '', scKind: 'roku', scA: '', scB: '',
+    lay: { order: ['map', 'control', 'shortcuts', 'flowmini', 'apps'], size: { map: 'L', control: 'M', shortcuts: 'M', flowmini: 'M', apps: 'F' }, hidden: {}, edit: false }, shortcuts: [{ id: 'sc1', n: 'Netflix', k: 'roku', a: 'netflix' }, { id: 'sc2', n: 'Charge', k: 'dock' }], flowSel: 'pi', scNew: false, scName: '', layouts: null, layActive: 'l1', accent: '', lnName: '', scKind: 'roku', scA: '', scB: '',
     cfg: { wake: true, spoken: true, vstyle: 'Warm', confirm: false, autoDock: 15, idleDock: 0, voiceOut: 'Device', resume: 90, edge: true, maxSpd: 100, lostStop: true, cliff: true, aBat: true, aStuck: true, aDone: true, quiet: 'Off', units: 'F', t24: false }
   };
+  this.state.layouts = [{ id: 'l1', n: 'Everyday', lay: this.state.lay }];
   [['system', 'info', 'Stella API started · demo robot'], ['api', 'info', 'WS /live connected · 0.5 s frames'], ['driver', 'warn', 'Unknown mode detected (known noisy 600-series packet)'], ['lidar', 'info', 'RPLIDAR C1 · scan 10 Hz · 360 pts'], ['battery', 'info', 'Pack 15.28 V · 74%'], ['voice', 'info', 'Brain ready: Claude (cloud) + on-device fallback']].forEach(a => this.log(a[0], a[1], a[2]));
 }
 componentDidMount() {
@@ -336,12 +337,23 @@ loadLayout() {
     const raw = localStorage.getItem('stella-os-layout'); if (!raw) return;
     const d = JSON.parse(raw), p = {};
     if (d.lay && Array.isArray(d.lay.order)) { const all = ['map', 'control', 'shortcuts', 'flowmini', 'apps']; const ord = d.lay.order.filter(i => all.includes(i)); all.forEach(i => { if (!ord.includes(i)) ord.push(i); }); p.lay = { order: ord, size: Object.assign({}, this.state.lay.size, d.lay.size || {}), hidden: d.lay.hidden || {}, edit: false }; }
+    if (Array.isArray(d.layouts) && d.layouts.length && d.layouts.every(l => l && l.id && l.lay && Array.isArray(l.lay.order))) {
+      const act = d.layouts.find(l => l.id === d.layActive) || d.layouts[0], all = ['map', 'control', 'shortcuts', 'flowmini', 'apps'];
+      const fix = l => { const ord = l.order.filter(i => all.includes(i)); all.forEach(i => { if (!ord.includes(i)) ord.push(i); }); return { order: ord, size: Object.assign({}, this.state.lay.size, l.size || {}), hidden: l.hidden || {}, edit: false }; };
+      p.layouts = d.layouts.map(l => ({ id: l.id, n: String(l.n || 'Layout'), lay: fix(l.lay) })); p.layActive = act.id; p.lay = fix(act.lay);
+    } else if (p.lay) p.layouts = [{ id: 'l1', n: 'Everyday', lay: p.lay }];
+    if (typeof d.accent === 'string' && /^#[0-9a-f]{6}$/i.test(d.accent)) p.accent = d.accent;
     if (Array.isArray(d.shortcuts)) p.shortcuts = d.shortcuts;
     if (Object.keys(p).length) this.setState(p);
   } catch (x) {}
 }
-saveLayout(lay, shortcuts) { try { localStorage.setItem('stella-os-layout', JSON.stringify({ lay: Object.assign({}, lay, { edit: false }), shortcuts })); } catch (x) {} }
-setLay(fn) { const lay = fn(this.state.lay); this.setState({ lay }); this.saveLayout(lay, this.state.shortcuts); }
+saveLayout(lay, shortcuts, extra) {
+  const s = this.state, x = extra || {}, act = x.active || s.layActive, clean = Object.assign({}, lay, { edit: false });
+  const layouts = x.layouts || (s.layouts || []).map(l => l.id === act ? Object.assign({}, l, { lay: clean }) : l);
+  try { localStorage.setItem('stella-os-layout', JSON.stringify({ lay: clean, shortcuts, layouts, layActive: act, accent: 'accent' in x ? x.accent : s.accent })); } catch (e) {}
+  return layouts;
+}
+setLay(fn) { const lay = fn(this.state.lay); const layouts = this.saveLayout(lay, this.state.shortcuts); this.setState({ lay, layouts }); }
 runShortcut(sc) {
   const l = this.live();
   if (sc.k === 'dock') { this.say('Sending Stella to the dock'); return this.dockNow ? this.dockNow() : this.api('/control/dock', 'POST'); }
@@ -592,6 +604,14 @@ renderVals() {
     kinds: [['roku', 'Open app'], ['tv_play', 'Play title'], ['tv_key', 'TV key'], ['say', 'Say'], ['clean', 'Clean'], ['dock', 'Dock']].map(k => ({ label: k[1], cls: s.scKind === k[0] ? 'on' : '', pick: () => this.setState({ scKind: k[0] }) })),
     save: () => { if (!s.scName.trim()) { this.say('Give it a name'); return; } const sh = s.shortcuts.concat([{ id: 'sc' + Date.now(), n: s.scName.trim(), k: s.scKind, a: s.scA.trim(), b: s.scB.trim() }]); this.setState({ shortcuts: sh, scNew: false, scName: '', scA: '', scB: '' }); this.saveLayout(L, sh); this.say('Shortcut added'); } };
   o.mini = this.parts().map(p => ({ n: p.n, col: p.st === 'ok' ? 'var(--ok)' : p.st === 'warn' ? 'var(--warn)' : 'var(--bad)', head: p.head })).slice(0, 6);
+
+  { const cur = s.layouts || [], keep = (extra) => this.saveLayout(s.lay, s.shortcuts, extra);
+    const sw = id => { const layouts = keep(); const tg = layouts.find(l => l.id === id); if (!tg) return; this.setState({ layouts, layActive: id, lay: Object.assign({}, tg.lay, { edit: s.lay.edit }) }); this.saveLayout(tg.lay, s.shortcuts, { layouts, active: id }); };
+    o.lays = { list: cur.map(l => ({ n: l.n, on: l.id === s.layActive, pick: () => sw(l.id) })), edit: s.lay.edit, name: s.lnName, setName: e => this.setState({ lnName: e.target.value }), canDel: cur.length > 1,
+      add: () => { const layouts = keep(); const id = 'l' + Date.now(), n = s.lnName.trim() || ('Layout ' + (layouts.length + 1)); const nl = layouts.concat([{ id, n, lay: Object.assign({}, s.lay, { edit: false }) }]); this.setState({ layouts: nl, layActive: id, lnName: '' }); this.saveLayout(s.lay, s.shortcuts, { layouts: nl, active: id }); this.say('Saved “' + n + '”'); },
+      del: () => { const layouts = cur.filter(l => l.id !== s.layActive); if (!layouts.length) return; const tg = layouts[0]; this.setState({ layouts, layActive: tg.id, lay: Object.assign({}, tg.lay, { edit: true }) }); this.saveLayout(tg.lay, s.shortcuts, { layouts, active: tg.id }); this.say('Layout deleted'); },
+      accents: [['Orange', ''], ['Mint', '#3ecf8e'], ['Blue', '#6aa2ff'], ['Violet', '#a78bfa'], ['Pink', '#ff6fae']].map(a => ({ name: a[0], c: a[1] || '#ff5a1f', on: s.accent === a[1], pick: () => { this.setState({ accent: a[1] }); keep({ accent: a[1] }); } })) };
+    o.accentStyle = s.accent ? ';--acc:' + s.accent : ''; }
   o.openFlow = () => this.setState({ app: 'flow' });
   const TIT = { flow: 'Live flow', camera: 'Camera', map: 'Map', parts: 'Parts', logs: 'Logs', tv: 'TV', climate: 'Climate', settings: 'Settings' };
   o.appTitle = TIT[s.app] || '';
