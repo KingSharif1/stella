@@ -53,3 +53,11 @@
 @keyframes ping{0%{transform:scale(.8);opacity:.7}100%{transform:scale(1.9);opacity:0}}
 .a1{animation:af1 11s ease-in-out infinite}.a2{animation:af2 14s ease-in-out infinite}.a3{animation:af3 9s ease-in-out infinite}
 .sf.still .aur{animation:none}
+
+.sf .hg{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;align-items:stretch}
+.sf .hw{min-width:0}
+@media (max-width:900px){.sf .hg{grid-template-columns:minmax(0,1fr)}.sf .hg>.hw{grid-column:1/-1!important}}
+.sf .chip:disabled{opacity:.35}
+@keyframes fldash{to{stroke-dashoffset:-26}}
+.sf .fl-go{animation:fldash .7s linear infinite}
+@media (prefers-reduced-motion:reduce){.sf .fl-go{animation:none}}
