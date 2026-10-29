@@ -145,7 +145,11 @@ a{color:#ff5a1f}a:hover{color:#ececec}
 #toast b{font-weight:600;font-size:13.5px;margin-right:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #toast .btn{height:36px;font-size:13px;padding:0 12px}
 @keyframes blink{50%{opacity:.25}}
-html[data-embed] .hdr{display:none}
+html[data-embed] .hdr,html[data-embed] .c-status,html[data-embed] .c-cam,html[data-embed] .c-drive{display:none}
+html[data-embed] .wrap{grid-template-columns:minmax(0,1fr)!important;padding-top:10px}
+html[data-embed] .c-map{grid-column:auto!important;grid-row:auto!important}
+html[data-embed] .c-found{grid-column:auto!important}
+html[data-embed] #dmap{aspect-ratio:auto;height:min(68vh,760px);max-height:none}
 #liveCam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;background:#000}
 </style>
 </head>
