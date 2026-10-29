@@ -56,6 +56,13 @@ constructor(p) {
   [['system', 'info', 'Stella API started · demo robot'], ['api', 'info', 'WS /live connected · 0.5 s frames'], ['driver', 'warn', 'Unknown mode detected (known noisy 600-series packet)'], ['lidar', 'info', 'RPLIDAR C1 · scan 10 Hz · 360 pts'], ['battery', 'info', 'Pack 15.28 V · 74%'], ['voice', 'info', 'Brain ready: Claude (cloud) + on-device fallback']].forEach(a => this.log(a[0], a[1], a[2]));
 }
 componentDidMount() {
+  this.onM3 = (e) => {   // messages from the 3D map (v4) iframe
+    const d = e.data; if (!d || !this.m3 || e.source !== this.m3.contentWindow) return;
+    if (d.type === 'stella:ready') this.m3At = 0;
+    else if (d.type === 'stella:drive') { this.api('/drive', 'POST', { linear: d.linear || 0, angular: d.angular || 0 }, 1500); }
+    else if (d.type === 'stella:cmd' && d.cmd === 'dock') { this.say('Sending Stella to the dock'); this.dockNow ? this.dockNow() : this.api('/control/dock', 'POST'); }
+  };
+  window.addEventListener('message', this.onM3);
   this.iv = setInterval(() => this.tick(), 120);
   this.fv = setInterval(() => { if (this.state.app === 'flow' || this.state.app === 'home') this.forceUpdate(); }, 1000);
   this.loadLayout();
@@ -63,7 +70,7 @@ componentDidMount() {
   this.onNet = () => this.setState({ internet: typeof navigator === 'undefined' ? true : navigator.onLine });
   window.addEventListener('online', this.onNet); window.addEventListener('offline', this.onNet); this.onNet();
 }
-componentWillUnmount() { clearInterval(this.iv); clearInterval(this.fv); clearTimeout(this.tt); clearTimeout(this.pushT); if (this.onNet) { window.removeEventListener('online', this.onNet); window.removeEventListener('offline', this.onNet); } try { this.rec && this.rec.abort(); } catch (x) {} this.driveZero(); }
+componentWillUnmount() { if (this.onM3) window.removeEventListener('message', this.onM3); clearInterval(this.iv); clearInterval(this.fv); clearTimeout(this.tt); clearTimeout(this.pushT); if (this.onNet) { window.removeEventListener('online', this.onNet); window.removeEventListener('offline', this.onNet); } try { this.rec && this.rec.abort(); } catch (x) {} this.driveZero(); }
 componentDidUpdate(_p, ps) {
   const s = this.state;
   if (ps.theme !== s.theme && this.props.onTheme) this.props.onTheme(s.theme);
@@ -124,6 +131,10 @@ driveVec(lin, ang) {
 driveZero() { if (this.driving && this.isLive()) { this.driving = false; this.api('/drive', 'POST', { linear: 0, angular: 0 }, 1500); } }
 syncLive() {
   const l = this.live(), now = Date.now();
+  if (this.m3 && now - (this.m3At || 0) > 150) {   // feed the 3D map: real pose, LiDAR, camera (or demo when offline)
+    this.m3At = now; const on = this.isLive();
+    try { this.m3.contentWindow.postMessage({ type: 'stella:live', on, pose: on ? this.pose3 : null, lidar: on && this.lidar && now - (this.lidarAt || 0) < 3000 ? this.lidar : null, cam: on && this.camSt && this.camSt.ok ? (l.robotUrl || '') + '/camera/stream' : '' }, '*'); } catch (x) {}
+  }
   // status the dashboard store already tracks over WS /live
   this.bat = typeof l.battery === 'number' ? l.battery : this.bat;
   if (l.robotOnline === false) { if (this.st !== 'fault') this.st = 'offline'; }
@@ -138,7 +149,7 @@ syncLive() {
     this.pollT = now;
     this.api('/pose', 'GET').then(p => {
       if (!p || p.__err) return; const q = p.pose || p;
-      const px = q.x, py = q.y, th = q.theta !== undefined ? q.theta : q.yaw;
+      const px = q.x, py = q.y, th = q.theta !== undefined ? q.theta : q.yaw; this.pose3 = typeof px === 'number' && typeof py === 'number' ? { x: px, y: py, theta: typeof th === 'number' ? th : 0 } : null;
       if (typeof px === 'number' && typeof py === 'number') {
         // metres -> floor-plan units (50 u/m, origin at the dock). Calibrate once the real map is saved.
         this.x = Math.max(24, Math.min(576, this.DK[0] + px * 50)); this.y = Math.max(24, Math.min(376, this.DK[1] - py * 50));
@@ -146,7 +157,7 @@ syncLive() {
       }
     });
   }
-  if ((this.state.app === 'camera' || this.state.app === 'home' || this.state.fpv) && now - (this.ldT || 0) > 700) {
+  if ((this.state.app === 'camera' || this.state.app === 'home' || this.state.app === 'map' || this.state.fpv) && now - (this.ldT || 0) > 700) {
     this.ldT = now;
     this.api('/lidar', 'GET').then(d => { if (d && !d.__err && Array.isArray(d.r)) { this.lidar = d; this.lidarAt = Date.now(); } else this.lidar = null; });
   }
@@ -636,7 +647,7 @@ parts() {
   const k = Math.min(s.speed, s.cfg.maxSpd) / 100, SUC = { eco: 1.4, normal: 2.2, turbo: 3.1 };
   return [
     { id: 'pi', n: 'Raspberry Pi 4', st: on ? 'ok' : 'off', src: 'api', head: on ? 'Online · the brain' : 'Not reachable', m: [['OS', 'Ubuntu 24.04'], ['ROS 2', 'Jazzy'], ['CPU temp', on ? '52 °C' : '—'], ['Throttled', on ? '0x0 (power OK)' : '—'], ['API', on ? 'WS /live · 0.5 s' : 'down']] },
-    { id: 'lidar', n: 'RPLIDAR C1', st: on ? 'warn' : 'off', src: 'lidar', head: on ? 'Scanning · not mounted yet' : 'Offline', m: [['Rate', on ? '10 Hz' : '—'], ['Points', on ? '360 / scan' : '—'], ['Range', '12 m'], ['Adapter', 'Red CP2102 · 460800'], ['Mount', 'Pending']] },
+    { id: 'lidar', n: 'RPLIDAR C1', st: on ? 'warn' : 'off', src: 'lidar', head: on ? 'Scanning · mounted on deck' : 'Offline', m: [['Rate', on ? '10 Hz' : '—'], ['Points', on ? '360 / scan' : '—'], ['Range', '12 m'], ['Adapter', 'Red CP2102 · 460800'], ['Mount', 'Acrylic deck']] },
     (() => {
       const c = this.camSt;
       if (on && c && c.ok) return { id: 'camera', n: 'Pi Camera', st: 'ok', src: 'camera', head: c.streaming ? 'Live · ' + (c.fps || 0) + ' fps' : 'Detected · ready', m: [['Program', c.tool || '—'], ['Size', c.size || '—'], ['Stream', '/camera/stream'], ['Runs', 'only while you watch']] };
@@ -831,7 +842,7 @@ rvApps(o, ds, on, here) {
     sendSel: () => { this.setState({ app: 'home' }); this.goTo(sel.id); },
     selSkipCls: this.skip[sel.id] ? 'tog on' : 'tog', selSkip: () => { this.skip[sel.id] = !this.skip[sel.id]; this.save(); this.log('system', 'info', sel.n + (this.skip[sel.id] ? ' skipped in cleans' : ' back in cleans')); this.forceUpdate(); },
     drawCls: s.draw ? 'pri' : '', drawLabel: s.draw ? 'Drag on the map…' : 'Draw no-go zone', drawTog: () => this.setState({ draw: !s.draw }),
-    mapTouch: s.draw ? 'none' : 'auto',
+    mapTouch: s.draw ? 'none' : 'auto', map3dRef: (el) => { this.m3 = el; this.m3At = 0; },
     mapDown: e => { if (!s.draw) return; const p = pt(e); this.zd = { x0: p[0], y0: p[1], x1: p[0], y1: p[1] }; try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) {} },
     mapMove: e => { if (!this.zd) return; const p = pt(e); this.zd.x1 = p[0]; this.zd.y1 = p[1]; this.forceUpdate(); },
     mapUp: () => { const d = this.zd; this.zd = null; if (!d) return; const x = Math.min(d.x0, d.x1), y = Math.min(d.y0, d.y1), w = Math.abs(d.x1 - d.x0), h = Math.abs(d.y1 - d.y0); if (w > 16 && h > 16) { this.setState({ zones: s.zones.concat({ x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), n: 'No-go ' + (s.zones.length + 1) }), draw: false }); this.log('system', 'info', 'No-go zone added'); } else this.forceUpdate(); },
